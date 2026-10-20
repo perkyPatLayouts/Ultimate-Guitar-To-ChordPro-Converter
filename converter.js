@@ -171,9 +171,9 @@
 
     if (includeHeader) {
       if (meta.title) output.push(d('title', 't', meta.title));
-      if (meta.artist) {
-        output.push(d('subtitle', 'st', meta.artist));
-        output.push(d('artist', 'artist', meta.artist));
+      const artistName = options.customArtist || meta.artist;
+      if (artistName && artistName.trim()) {
+        output.push(d('subtitle', 'st', artistName.trim()));
       }
       if (meta.key) {
         const k = transpose ? transposeChord(meta.key, transpose) : meta.key;

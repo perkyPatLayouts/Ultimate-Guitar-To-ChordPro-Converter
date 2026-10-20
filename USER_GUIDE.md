@@ -64,14 +64,18 @@ You have two convenient ways to convert the song:
 
 ## 3. Key Features
 
+- **Artist Name as ChordPro Subtitle**:
+  The artist is automatically included as a standard ChordPro subtitle directive (`{subtitle: Artist Name}` or `{st: Artist Name}`) directly under the song title.
+- **Downloadable PDF Chord Charts**:
+  Download professional, print-ready PDF lead sheets with chords arranged directly on top of each lyric line in their exact locations, with clean section headers and tab formatting.
 - **Automatic Metadata Extraction**:
-  Reads the song title, artist, original key, capo position, tempo (BPM), and guitar tuning directly from Ultimate Guitar's embedded page data.
+  Reads the song title, artist/subtitle, original key, capo position, tempo (BPM), and guitar tuning directly from Ultimate Guitar's embedded page data.
 - **Accurate Chord-over-Lyric Alignment**:
   Seamlessly weaves chord changes directly into the lyric syllables where they occur (`[C]When I [G]find myself...`).
 - **Standard Section Directives**:
   Wraps verses in `{start_of_verse}` ... `{end_of_verse}` and choruses in `{start_of_chorus}` ... `{end_of_chorus}`.
-- **ASCII Tab Preservation**:
-  Detects guitar tablature staves (`e|---`, `B|---`) and encapsulates them within `{start_of_tab}` ... `{end_of_tab}` blocks to preserve monospace formatting.
+- **Monospace Tab & Fingering Diagram Preservation**:
+  Detects guitar tablature staves and chord fingering diagrams (`C/G 3 x 2 0 1 0` or `D/C 8x777x`) and encapsulates them within `{start_of_tab}` ... `{end_of_tab}` blocks to ensure monospace formatting.
 - **On-the-Fly Transposition**:
   Transpose chords up or down semitones without modifying your original source tab.
 - **Zero Cloudflare / Anti-Bot Blocking**:
