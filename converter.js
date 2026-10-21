@@ -96,15 +96,66 @@
     });
   }
 
+  function formatArtistFromSlug(slug) {
+    if (!slug) return '';
+    return slug
+      .replace(/[-_]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .map(function (w) {
+        return w ? (w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : '';
+      })
+      .join(' ');
+  }
+
+  function extractArtistFromUrl(url) {
+    if (!url) return '';
+    try {
+      const match = url.match(/\/tab\/([^\/?#]+)/i);
+      if (match && match[1]) {
+        return formatArtistFromSlug(decodeURIComponent(match[1]));
+      }
+    } catch (e) {
+      const match = url.match(/\/tab\/([^\/?#]+)/i);
+      if (match && match[1]) {
+        return formatArtistFromSlug(match[1]);
+      }
+    }
+    return '';
+  }
+
+  function extractTitleFromUrl(url) {
+    if (!url) return '';
+    try {
+      const match = url.match(/\/tab\/[^\/?#]+\/([^\/?#]+)/i);
+      if (match && match[1]) {
+        let raw = decodeURIComponent(match[1]);
+        raw = raw.replace(/-(?:chords|tab|tabs|bass|ukulele|pro)(?:-\d+)?$/i, '');
+        raw = raw.replace(/-\d+$/, '');
+        return formatArtistFromSlug(raw);
+      }
+    } catch (e) {
+      // Ignore
+    }
+    return '';
+  }
+
   function decodeHTMLEntities(str) {
     const txt = document.createElement('textarea');
     txt.innerHTML = str;
     return txt.value;
   }
 
-  function extractFromDOM(doc) {
-    const meta = { title: '', artist: '', key: '', capo: '', tempo: '', tuning: '' };
+  function extractFromDOM(doc, url) {
+    const pageUrl = url || (doc && doc.location && doc.location.href) || (typeof window !== 'undefined' && window.location && window.location.href) || '';
+    const meta = { title: '', artist: '', key: '', capo: '', tempo: '', tuning: '', url: pageUrl };
     let rawContent = '';
+
+    // If URL is available, extract artist immediately from URL slug (e.g. /tab/blind-faith/...)
+    const artistFromUrl = extractArtistFromUrl(pageUrl);
+    if (artistFromUrl) {
+      meta.artist = artistFromUrl;
+    }
 
     // 1. Look for .js-store
     const jsStore = doc.querySelector('.js-store');
@@ -116,7 +167,10 @@
         if (pageData) {
           if (pageData.tab) {
             meta.title = pageData.tab.song_name || '';
-            meta.artist = pageData.tab.artist_name || '';
+            // If URL-based artist not yet found, use tab.artist_name and format it
+            if (!meta.artist && pageData.tab.artist_name) {
+              meta.artist = formatArtistFromSlug(pageData.tab.artist_name);
+            }
           }
           if (pageData.tab_view) {
             rawContent = pageData.tab_view.wiki_tab?.content || '';
@@ -132,10 +186,19 @@
       }
     }
 
-    // 2. Fallback to DOM elements
+    // 2. Fallback to DOM elements or URL
     if (!meta.title) {
       const h1 = doc.querySelector('h1');
-      if (h1) meta.title = h1.innerText.replace(/chords/i, '').replace(/tab/i, '').trim();
+      if (h1) {
+        meta.title = h1.innerText.replace(/chords/i, '').replace(/tab/i, '').trim();
+      }
+      if (!meta.title && pageUrl) {
+        meta.title = extractTitleFromUrl(pageUrl);
+      }
+    }
+
+    if (!meta.artist && pageUrl) {
+      meta.artist = extractArtistFromUrl(pageUrl);
     }
 
     if (!rawContent) {
@@ -156,8 +219,24 @@
     const includeHeader = options.includeMetaHeader !== false;
     const stripTabs = !!options.stripTabStaves;
 
-    let content = input;
-    let meta = options.metadata || { title: 'Untitled Song', artist: 'Unknown Artist' };
+    let content = input || '';
+    let meta = options.metadata || { title: 'Untitled Song', artist: '' };
+
+    // Extract artist from URL if provided or present in input
+    const urlFromOptions = options.url || meta.url || '';
+    let artistFromUrl = extractArtistFromUrl(urlFromOptions);
+
+    if (!artistFromUrl && typeof content === 'string') {
+      const urlInContent = content.match(/https?:\/\/tabs\.ultimate-guitar\.com\/tab\/[^\s"')]+/i);
+      if (urlInContent) {
+        artistFromUrl = extractArtistFromUrl(urlInContent[0]);
+      }
+    }
+
+    let finalArtist = options.customArtist || artistFromUrl || meta.artist || '';
+    if (finalArtist) {
+      finalArtist = formatArtistFromSlug(finalArtist);
+    }
 
     // Directives builder
     function d(longName, shortName, val) {
@@ -170,11 +249,14 @@
     const detectedChords = new Set();
 
     if (includeHeader) {
-      if (meta.title) output.push(d('title', 't', meta.title));
-      const artistName = options.customArtist || meta.artist;
-      if (artistName && artistName.trim()) {
-        output.push(d('subtitle', 'st', artistName.trim()));
+      const songTitle = options.customTitle || meta.title || 'Untitled Song';
+      output.push(d('title', 't', songTitle));
+
+      // Always include artist as subtitle
+      if (finalArtist) {
+        output.push(d('subtitle', 'st', finalArtist));
       }
+
       if (meta.key) {
         const k = transpose ? transposeChord(meta.key, transpose) : meta.key;
         output.push(d('key', 'key', k));
@@ -387,5 +469,8 @@
     convert: convert,
     extractFromDOM: extractFromDOM,
     transposeChord: transposeChord,
+    formatArtistFromSlug: formatArtistFromSlug,
+    extractArtistFromUrl: extractArtistFromUrl,
   };
 });
+

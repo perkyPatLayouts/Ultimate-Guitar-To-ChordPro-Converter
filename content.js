@@ -11,7 +11,8 @@
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'extract_tab') {
-      const result = window.UG2ChordPro ? window.UG2ChordPro.extractFromDOM(document) : null;
+      const pageUrl = request.url || window.location.href;
+      const result = window.UG2ChordPro ? window.UG2ChordPro.extractFromDOM(document, pageUrl) : null;
       sendResponse({ success: !!result, data: result });
     }
   });
@@ -73,10 +74,16 @@
       return;
     }
 
-    const { content, metadata } = window.UG2ChordPro.extractFromDOM(document);
+    const pageUrl = window.location.href;
+    const { content, metadata } = window.UG2ChordPro.extractFromDOM(document, pageUrl);
     if (!content) {
       alert('Could not find tab content on this page. Make sure you are on a tab page with chords.');
       return;
+    }
+
+    // Ensure artist is clean and extracted from URL if needed
+    if (!metadata.artist && window.UG2ChordPro.extractArtistFromUrl) {
+      metadata.artist = window.UG2ChordPro.extractArtistFromUrl(pageUrl);
     }
 
     const modal = document.createElement('div');
@@ -102,7 +109,7 @@
             <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
               <span style="color: #f59e0b;">♫</span>
               <span>ChordPro Export</span>
-              <span style="font-size: 11px; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 6px; rounded: 4px; border-radius: 4px;">.cho</span>
+              <span style="font-size: 11px; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 6px; border-radius: 4px;">.cho</span>
             </h3>
             <p style="margin: 2px 0 0 0; font-size: 12px; color: #a1a1aa;">${metadata.title || 'Tab'} by ${metadata.artist || 'Unknown'}</p>
           </div>
@@ -118,9 +125,8 @@
             <button id="ug-trans-up" style="background: #27272a; border: none; color: #ffffff; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-weight: bold;">+1</button>
           </div>
 
-          <div style="display: flex; items-center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
             <button id="ug-btn-copy" style="background: #27272a; border: none; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">📋 Copy</button>
-            <button id="ug-btn-pdf" style="background: #059669; border: none; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;">📄 PDF Chart</button>
             <button id="ug-btn-dl" style="background: #f59e0b; border: none; color: #000000; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;">💾 .cho</button>
           </div>
         </div>
@@ -137,6 +143,7 @@
     function updateOutput() {
       currentResult = window.UG2ChordPro.convert(content, {
         metadata: metadata,
+        url: pageUrl,
         transposeSemitones: currentTranspose,
         useShortDirectives: false,
         useSectionEnvironments: true,
@@ -160,15 +167,6 @@
       setTimeout(() => { b.innerText = '📋 Copy'; }, 2000);
     };
 
-    document.getElementById('ug-btn-pdf').onclick = () => {
-      const text = document.getElementById('ug-modal-output').value;
-      const printWin = window.open('', '_blank');
-      if (printWin) {
-        printWin.document.write(renderPrintableChordChart(text));
-        printWin.document.close();
-      }
-    };
-
     document.getElementById('ug-btn-dl').onclick = () => {
       const text = document.getElementById('ug-modal-output').value;
       const fn = ((metadata.title || 'song') + '.cho').toLowerCase().replace(/[^a-z0-9.]+/g, '_');
@@ -180,105 +178,6 @@
     };
 
     updateOutput();
-  }
-
-  // Render printable chord chart with chords arranged on top of lyrics
-  function renderPrintableChordChart(chordproText) {
-    const lines = chordproText.split(/\r?\n/);
-    let title = 'Song';
-    let subtitle = '';
-    const metaItems = [];
-    let bodyHtml = '';
-    let inTab = false;
-    let tabLines = [];
-
-    function flushTab() {
-      if (tabLines.length > 0) {
-        bodyHtml += '<pre style="font-family:\'Courier New\',monospace;font-size:12px;line-height:1.4;background:#f3f4f6;padding:10px;border-radius:6px;margin:10px 0;overflow-x:auto;">' + tabLines.join('\n') + '</pre>';
-        tabLines = [];
-      }
-    }
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        if (inTab) { tabLines.push(''); }
-        else { bodyHtml += '<div style="height:10px;"></div>'; }
-        continue;
-      }
-
-      const dirMatch = trimmed.match(/^\{([a-zA-Z0-9_\-]+)(?::\s*(.*?))?\}$/);
-      if (dirMatch) {
-        const name = dirMatch[1].toLowerCase();
-        const val = (dirMatch[2] || '').trim();
-
-        if (name === 'title' || name === 't') { title = val; continue; }
-        if (name === 'subtitle' || name === 'st') { subtitle = val; continue; }
-        if (name === 'key') { metaItems.push('Key: <strong>' + val + '</strong>'); continue; }
-        if (name === 'capo') { metaItems.push('Capo: <strong>' + val + '</strong>'); continue; }
-        if (name === 'tempo') { metaItems.push('Tempo: <strong>' + val + ' BPM</strong>'); continue; }
-        if (name === 'tuning') { metaItems.push('Tuning: <strong>' + val + '</strong>'); continue; }
-
-        if (name === 'start_of_tab' || name === 'sot') { inTab = true; continue; }
-        if (name === 'end_of_tab' || name === 'eot') { inTab = false; flushTab(); continue; }
-
-        if (name.startsWith('start_of_') || name === 'sov' || name === 'soc' || name === 'sob') {
-          flushTab();
-          const label = val || (name.includes('chorus') || name === 'soc' ? 'CHORUS' : (name.includes('bridge') || name === 'sob' ? 'BRIDGE' : 'VERSE'));
-          bodyHtml += '<div style="font-weight:700;font-size:11px;color:#1e3a8a;text-transform:uppercase;margin:16px 0 6px 0;padding-bottom:2px;border-bottom:1px solid #e5e7eb;">' + label + '</div>';
-          continue;
-        }
-        if (name.startsWith('end_of_') || name === 'eov' || name === 'eoc' || name === 'eob') {
-          flushTab();
-          bodyHtml += '<div style="height:6px;"></div>';
-          continue;
-        }
-        if (name === 'comment' || name === 'c') {
-          flushTab();
-          bodyHtml += '<div style="font-weight:600;font-size:11px;color:#4b5563;margin:10px 0 4px 0;">[ ' + val + ' ]</div>';
-          continue;
-        }
-        continue;
-      }
-
-      if (inTab) {
-        tabLines.push(line);
-        continue;
-      }
-
-      const chordLyricRegex = /\[([^\]]+)\]|([^\[]+)/g;
-      let match;
-      const tokens = [];
-      let pendingChord = null;
-
-      while ((match = chordLyricRegex.exec(line)) !== null) {
-        if (match[1]) {
-          if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
-          pendingChord = match[1];
-        } else if (match[2]) {
-          tokens.push({ chord: pendingChord, lyric: match[2] });
-          pendingChord = null;
-        }
-      }
-      if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
-
-      if (tokens.length > 0) {
-        let lineHtml = '<div style="display:flex;flex-wrap:wrap;margin-bottom:6px;line-height:1.2;">';
-        for (const t of tokens) {
-          const chordStr = t.chord ? '<span style="font-weight:700;font-size:11px;color:#b45309;min-height:14px;display:block;">' + t.chord + '</span>' : '<span style="min-height:14px;display:block;">&nbsp;</span>';
-          const lyricStr = '<span style="font-size:13px;color:#111827;white-space:pre;">' + (t.lyric || ' ') + '</span>';
-          lineHtml += '<div style="display:inline-flex;flex-direction:column;align-items:flex-start;">' + chordStr + lyricStr + '</div>';
-        }
-        lineHtml += '</div>';
-        bodyHtml += lineHtml;
-      } else {
-        bodyHtml += '<div style="margin-bottom:6px;font-size:13px;color:#111827;">' + line + '</div>';
-      }
-    }
-
-    flushTab();
-
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + (subtitle ? ' - ' + subtitle : '') + ' (Chord Chart)</title><style>@page{size:letter portrait;margin:15mm;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#111827;margin:0;padding:20px;font-size:13px;}@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body><div class="no-print" style="background:#fef3c7;border:1px solid #fde68a;padding:12px 16px;border-radius:8px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;"><div><strong>PDF Print Preview</strong> — In print dialog, choose <em>Destination: Save as PDF</em>.</div><button onclick="window.print()" style="background:#059669;color:white;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;cursor:pointer;">🖨️ Save as PDF</button></div><div style="border-bottom:2px solid #e5e7eb;padding-bottom:12px;margin-bottom:16px;"><h1 style="margin:0 0 4px 0;font-size:24px;font-weight:800;color:#111827;">' + title + '</h1>' + (subtitle ? '<h2 style="margin:0 0 8px 0;font-size:14px;font-weight:600;color:#4b5563;">' + subtitle + '</h2>' : '') + (metaItems.length > 0 ? '<div style="font-size:11px;color:#6b7280;">' + metaItems.join(' &nbsp;·&nbsp; ') + '</div>' : '') + '</div>' + bodyHtml + '<script>window.onload=function(){setTimeout(function(){window.print();},350);};</script></body></html>';
   }
 
   // Inject floating button when page is ready

@@ -65,9 +65,7 @@ You have two convenient ways to convert the song:
 ## 3. Key Features
 
 - **Artist Name as ChordPro Subtitle**:
-  The artist is automatically included as a standard ChordPro subtitle directive (`{subtitle: Artist Name}` or `{st: Artist Name}`) directly under the song title.
-- **Downloadable PDF Chord Charts**:
-  Download professional, print-ready PDF lead sheets with chords arranged directly on top of each lyric line in their exact locations, with clean section headers and tab formatting.
+  The artist is automatically extracted directly from the Ultimate Guitar URL (e.g. `https://tabs.ultimate-guitar.com/tab/blind-faith/...` -> `Blind Faith`), with dashes replaced by spaces and each word capitalized. It is included as a standard ChordPro subtitle directive (`{subtitle: Artist Name}` or `{st: Artist Name}`) directly under the song title.
 - **Automatic Metadata Extraction**:
   Reads the song title, artist/subtitle, original key, capo position, tempo (BPM), and guitar tuning directly from Ultimate Guitar's embedded page data.
 - **Accurate Chord-over-Lyric Alignment**:

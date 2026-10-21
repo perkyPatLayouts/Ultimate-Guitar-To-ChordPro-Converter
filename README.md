@@ -36,8 +36,7 @@ For full documentation, see [USER_GUIDE.md](USER_GUIDE.md).
 
 ## Features
 
-- **Artist as ChordPro Subtitle**: Emits `{subtitle: Artist}` directly below `{title: ...}` following official ChordPro specifications.
-- **Downloadable PDF Chord Charts**: 1-click download of printable PDF lead sheets with chords aligned directly on top of each lyric line in proper locations.
+- **Artist as ChordPro Subtitle**: Automatically extracts the artist name directly from the Ultimate Guitar URL (e.g. `https://tabs.ultimate-guitar.com/tab/blind-faith/...` -> `Blind Faith`), replacing dashes with spaces and capitalizing each word, and emits `{subtitle: Artist}` directly below `{title: ...}` adhering to the ChordPro specification.
 - **Automatic Metadata Extraction**: Title, Artist (Subtitle), Key, Capo, Tempo, and Tuning.
 - **Format Support**:
   - Ultimate Guitar `[ch]...[/ch]` tags
@@ -46,4 +45,4 @@ For full documentation, see [USER_GUIDE.md](USER_GUIDE.md).
   - Chord fingering diagram blocks (`C/G 3 x 2 0 1 0`, `D/C 8x777x`) formatted in monospace
 - **Standard Directives**: Generates `{title}`, `{subtitle}`, `{key}`, `{capo}`, `{start_of_verse}`, `{end_of_verse}`, `{start_of_chorus}`, `{end_of_chorus}`, `{start_of_tab}`, `{end_of_tab}`.
 - **Transposition**: Transpose chords up and down semitones on the fly.
-- **Musician Export**: Download standard `.cho` files and formatted `.pdf` chord charts.
+- **Musician Export**: Download standard `.cho` ChordPro files or copy to clipboard for OnSong, SongBook, and ChordPro CLI.
