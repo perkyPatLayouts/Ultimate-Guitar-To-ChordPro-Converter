@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ultimate Guitar to ChordPro Converter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Converts any Ultimate Guitar tab or chord page into clean, standard ChordPro (.cho) format.",
   "permissions": [
     "activeTab",

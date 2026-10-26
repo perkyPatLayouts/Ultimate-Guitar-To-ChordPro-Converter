@@ -4,12 +4,14 @@
  */
 
 (function (root, factory) {
+  const res = factory();
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
-  } else {
-    root.UG2ChordPro = factory();
+    module.exports = res;
   }
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (root) {
+    root.UG2ChordPro = res;
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : this), function () {
 
   const SEMITONES = {
     'C': 0, 'C#': 1, 'Db': 1,
@@ -24,11 +26,11 @@
   const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const FLATS  = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-  const CHORD_REGEX = /^[A-G](?:b|#)?(?:m|min|maj|M|dim|aug|sus|sus2|sus4|add[0-9]|add9|add11|[0-9]{1,2}|M7|maj7|min7|m7|m6|6|7|9|11|13|7sus4|7b5|7#9|7b9|dim7)?(?:\/[A-G](?:b|#)?)?$/;
+  const CHORD_REGEX = /^[A-G](?:#|b)?(?:maj|min|m|M|dim|aug|\+|sus|add|[0-9]+|ø|o|°)?(?:[0-9]{1,2}|maj[0-9]{1,2}|min[0-9]{1,2}|m[0-9]{1,2}|6\/9)?(?:(?:#|b)[0-9]{1,2}|alt|sus[24]?|add[0-9]+|no[0-9]+)*(?:\/[A-G](?:#|b)?)?\*?$/i;
 
   function isChordToken(token) {
     if (!token) return false;
-    const clean = token.replace(/^[\(\[\{]/, '').replace(/[\)\]\},.:;!?]$/, '').trim();
+    const clean = token.replace(/^[\(\[\{]+/, '').replace(/[\)\]\},.:;!?]+$/, '').trim();
     if (!clean) return false;
 
     const stopwords = new Set(['A', 'I', 'AM', 'AN', 'AT', 'BE', 'BY', 'DO', 'HE', 'IN', 'IS', 'IT', 'ME', 'MY', 'NO', 'OF', 'ON', 'OR', 'SO', 'TO', 'UP', 'US', 'WE']);
@@ -56,7 +58,7 @@
     }
 
     if (tokens.length <= 2) return chordCount === tokens.length;
-    return (chordCount / tokens.length) >= 0.7;
+    return (chordCount / tokens.length) >= 0.6;
   }
 
   function isChordFingeringLine(line) {
@@ -88,12 +90,34 @@
 
   function transposeChord(chord, semitones, preferFlats) {
     if (!semitones) return chord;
-    return chord.replace(/([A-G](?:b|#)?)/g, function (match) {
+    return chord.replace(/([A-G](?:b|#)?)/g, function (match, p1, offset, string) {
+      if (offset !== 0 && string[offset - 1] !== '/') {
+        return match;
+      }
       const current = SEMITONES[match];
       if (current === undefined) return match;
       const target = ((current + semitones) % 12 + 12) % 12;
       return preferFlats ? FLATS[target] : SHARPS[target];
     });
+  }
+
+  function weaveChordsIntoLyrics(chords, lyrics, transpose) {
+    if (!chords || chords.length === 0) return lyrics;
+    const L = lyrics.length;
+    const inlineChords = chords.filter(function (c) { return c.index < L; }).sort(function (a, b) { return b.index - a.index; });
+    const trailingChords = chords.filter(function (c) { return c.index >= L; }).sort(function (a, b) { return a.index - b.index; });
+
+    let woven = lyrics;
+    for (let cIdx = 0; cIdx < inlineChords.length; cIdx++) {
+      const c = inlineChords[cIdx];
+      const bracket = '[' + transposeChord(c.chord, transpose) + ']';
+      woven = woven.slice(0, c.index) + bracket + woven.slice(c.index);
+    }
+    for (let tIdx = 0; tIdx < trailingChords.length; tIdx++) {
+      const tc = trailingChords[tIdx];
+      woven += ' [' + transposeChord(tc.chord, transpose) + ']';
+    }
+    return woven;
   }
 
   function formatArtistFromSlug(slug) {
@@ -220,16 +244,18 @@
     const stripTabs = !!options.stripTabStaves;
 
     let content = input || '';
-    let meta = options.metadata || { title: 'Untitled Song', artist: '' };
+    let meta = options.metadata || { title: '', artist: '' };
 
-    // Extract artist from URL if provided or present in input
+    // Extract artist and title from URL if provided or present in input
     const urlFromOptions = options.url || meta.url || '';
     let artistFromUrl = extractArtistFromUrl(urlFromOptions);
+    let titleFromUrl = extractTitleFromUrl(urlFromOptions);
 
-    if (!artistFromUrl && typeof content === 'string') {
+    if (typeof content === 'string') {
       const urlInContent = content.match(/https?:\/\/tabs\.ultimate-guitar\.com\/tab\/[^\s"')]+/i);
       if (urlInContent) {
-        artistFromUrl = extractArtistFromUrl(urlInContent[0]);
+        if (!artistFromUrl) artistFromUrl = extractArtistFromUrl(urlInContent[0]);
+        if (!titleFromUrl) titleFromUrl = extractTitleFromUrl(urlInContent[0]);
       }
     }
 
@@ -238,19 +264,42 @@
       finalArtist = formatArtistFromSlug(finalArtist);
     }
 
+    let finalTitle = options.customTitle || (meta.title && meta.title !== 'Untitled Song' ? meta.title : '') || titleFromUrl || '';
+
+    // Fallback: check first two non-empty lines for title and artist if they are plain text headers
+    const rawFirstLines = content.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    if (!finalTitle && rawFirstLines.length > 0 && !isChordLine(rawFirstLines[0]) && !rawFirstLines[0].startsWith('[') && !rawFirstLines[0].startsWith('{') && !isChordFingeringLine(rawFirstLines[0])) {
+      finalTitle = rawFirstLines[0];
+    }
+    if (!finalArtist && rawFirstLines.length > 1 && !isChordLine(rawFirstLines[1]) && !rawFirstLines[1].startsWith('[') && !rawFirstLines[1].startsWith('{') && !isChordFingeringLine(rawFirstLines[1])) {
+      finalArtist = formatArtistFromSlug(rawFirstLines[1]);
+    }
+
+    if (!finalTitle) {
+      finalTitle = 'Untitled Song';
+    }
+
     // Directives builder
     function d(longName, shortName, val) {
       const name = useShort ? shortName : longName;
       return (val !== undefined && val !== null && val !== '') ? `{${name}: ${val}}` : `{${name}}`;
     }
 
+    // Unwrap [tab]...[/tab] blocks that are just monospace wrappers around chords/lyrics
+    content = content.replace(/\[tab\]([\s\S]*?)\[\/tab\]/gi, function (match, inner) {
+      const isActualTab = /^[eEaAdDgGbB]\|/m.test(inner)
+        || /^\|?[-0-9hpsb\/~xX\|\s]{8,}\|?$/m.test(inner)
+        || isChordFingeringLine(inner);
+      if (isActualTab) return match;
+      return inner;
+    });
+
     const lines = content.split(/\r?\n/);
     const output = [];
     const detectedChords = new Set();
 
     if (includeHeader) {
-      const songTitle = options.customTitle || meta.title || 'Untitled Song';
-      output.push(d('title', 't', songTitle));
+      output.push(d('title', 't', finalTitle));
 
       // Always include artist as subtitle
       if (finalArtist) {
@@ -279,6 +328,17 @@
     }
 
     let i = 0;
+    // Skip duplicate header lines (title / artist) at start before sections or chords
+    const norm = function (s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    while (i < lines.length) {
+      const cl = norm(lines[i]);
+      if (!cl || cl === norm(finalTitle) || cl === norm(finalArtist) || cl === norm(meta.title) || cl === norm(meta.artist) || cl === norm(options.customTitle) || cl === norm(options.customArtist)) {
+        i++;
+      } else {
+        break;
+      }
+    }
+
     while (i < lines.length) {
       let line = lines[i];
 
@@ -400,21 +460,18 @@
 
         const isPure = rem.trim().length === 0;
         const nextLine = lines[i + 1];
-        const isNextLyrics = nextLine && nextLine.trim() && !nextLine.includes('[ch]') && !isChordLine(nextLine) && !nextLine.trim().startsWith('[');
+        const isNextLyrics = nextLine && nextLine.trim() && !nextLine.includes('[ch]') && !isChordLine(nextLine) && !nextLine.trim().startsWith('[') && !/^[eEaAdDgGbB]\|/.test(nextLine.trim());
 
         if (isPure && isNextLyrics) {
-          const sorted = chords.sort((a, b) => b.index - a.index);
-          let woven = nextLine;
-          sorted.forEach(c => {
-            const bracket = `[${transposeChord(c.chord, transpose)}]`;
-            woven = c.index >= woven.length ? (woven + ' ' + bracket) : (woven.slice(0, c.index) + bracket + woven.slice(c.index));
-          });
+          const woven = weaveChordsIntoLyrics(chords, nextLine, transpose);
           output.push(woven);
           i += 2;
           continue;
         }
 
-        output.push(line.replace(/\[ch\](.*?)\[\/ch\]/g, (_, c) => `[${transposeChord(c, transpose)}]`));
+        output.push(line.replace(/\[ch\](.*?)\[\/ch\]/g, function (_, c) {
+          return '[' + transposeChord(c, transpose) + ']';
+        }));
         i++;
         continue;
       }
@@ -433,21 +490,26 @@
         }
 
         const nextLine = lines[i + 1];
-        const isNextLyrics = nextLine && nextLine.trim() && !isChordLine(nextLine) && !nextLine.trim().startsWith('[');
+        const isNextLyrics = nextLine && nextLine.trim() && !isChordLine(nextLine) && !nextLine.trim().startsWith('[') && !/^[eEaAdDgGbB]\|/.test(nextLine.trim());
 
         if (isNextLyrics) {
-          const sorted = chords.sort((a, b) => b.index - a.index);
-          let woven = nextLine;
-          sorted.forEach(c => {
-            const bracket = `[${transposeChord(c.chord, transpose)}]`;
-            woven = c.index >= woven.length ? (woven + ' ' + bracket) : (woven.slice(0, c.index) + bracket + woven.slice(c.index));
-          });
+          const woven = weaveChordsIntoLyrics(chords, nextLine, transpose);
           output.push(woven);
           i += 2;
           continue;
         }
 
-        output.push(chords.map(c => `[${transposeChord(c.chord, transpose)}]`).join(' '));
+        // Standalone chord progression line - preserve original visual spacing
+        const chordOnly = line.replace(/\S+/g, function (tok) {
+          const clean = tok.replace(/^[\(\[\{]+/, '').replace(/[\)\]\},.:;!?]+$/, '').trim();
+          if (isChordToken(clean)) {
+            const transposed = transposeChord(clean, transpose);
+            detectedChords.add(transposed);
+            return '[' + transposed + ']';
+          }
+          return tok;
+        });
+        output.push(chordOnly);
         i++;
         continue;
       }
